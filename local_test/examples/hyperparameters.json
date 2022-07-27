@@ -1,0 +1,5 @@
+{
+  "penalty": "elasticnet",
+  "C": 1.0,
+  "max_iter": 100
+}
