@@ -114,8 +114,8 @@ def tune_hyperparameters(data, data_schema, num_trials, hyper_param_path, hpt_re
     valid_X, valid_y = valid_data['X'].astype(np.float), valid_data['y'].astype(np.float) 
     
     # balance the target classes    
-    #train_X, train_y = model_trainer.get_resampled_data(train_X, train_y)
-    #valid_X, valid_y = model_trainer.get_resampled_data(valid_X, valid_y)
+    train_X, train_y = model_trainer.get_resampled_data(train_X, train_y)
+    valid_X, valid_y = model_trainer.get_resampled_data(valid_X, valid_y)
     
     # Scikit-optimize objective function
     @use_named_args(hpt_space)
