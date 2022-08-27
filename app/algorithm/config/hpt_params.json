@@ -2,14 +2,13 @@
   {
     "name": "min_samples_leaf",
     "short_desc": "The minimum number of samples required to be at a leaf node.",
-    "default": 1,
+    "default": 2,
     "type": "int",
     "search_type": "uniform",
     "range_low": 1,
     "range_high": 10,
     "run_HPO": true
-  }, 
-
+  },
   {
     "name": "learning_rate",
     "short_desc": "Learning rate for boosting",
@@ -19,17 +18,5 @@
     "range_high": 5e-1,
     "search_type": "log-uniform",
     "run_HPO": true
-  }, 
-
-  {
-    "name":"early_stopping_tolerance",
-    "short_desc": "Tolerance that dictates the smallest delta required to be considered an improvement.",
-    "default": 0.0001,
-    "type": "real",
-    "search_type":"log-uniform",
-    "range_low": 0.000001,
-    "range_high": 1, 
-    "run_HPO": true 
   }
-
 ]

@@ -15,19 +15,15 @@ global_explanations_chart_fname = "global_explanations.png"
 
 MODEL_NAME = "bin_class_base_exp_boost_machine_interpret"
 
-COST_THRESHOLD = float('inf')
-
 
 class Classifier(): 
     
-    def __init__(self, feature_names, min_samples_leaf= 2, learning_rate= 1e-3, 
-                 early_stopping_tolerance= 0.0001,  **kwargs) -> None:
+    def __init__(self, feature_names, min_samples_leaf= 2, learning_rate= 1e-3,  **kwargs) -> None:
 
         self.feature_names = feature_names
         self.min_samples_leaf= min_samples_leaf
         self.learning_rate= learning_rate
-        self.early_stopping_tolerance= early_stopping_tolerance
-        self.MAX_LOCAL_EXPLANATIONS = 10
+        self.MAX_LOCAL_EXPLANATIONS = 5
         
         self.model = self.build_model()     
         
@@ -38,7 +34,6 @@ class Classifier():
             feature_names = self.feature_names, 
             min_samples_leaf= self.min_samples_leaf,
             learning_rate= self.learning_rate,
-            early_stopping_tolerance= self.early_stopping_tolerance,  
             random_state=0)
         return model
     

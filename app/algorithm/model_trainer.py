@@ -36,7 +36,7 @@ def get_trained_model(data, data_schema, hyper_params):
     # print('train_X/y shape:',  train_X.shape, train_y.shape)   
     
     # balance the target classes  
-    # train_X, train_y = get_resampled_data(train_X, train_y)
+    train_X, train_y = get_resampled_data(train_X, train_y)
               
     # Create and train model     
     print('Fitting model ...')  
