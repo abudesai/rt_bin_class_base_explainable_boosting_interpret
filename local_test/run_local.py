@@ -1,17 +1,17 @@
 import os, shutil
 import sys
 import time
-import numpy as np, pandas as pd 
-import pprint
-from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score
+import pandas as pd, numpy as np
+import pprint 
+from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score 
 
 sys.path.insert(0, './../app')
 import algorithm.utils as utils 
-import algorithm.model_trainer as model_trainer
+import algorithm.model_trainer as model_trainer 
 import algorithm.model_server as model_server
 import algorithm.model_tuner as model_tuner
 import algorithm.preprocessing.pipeline as pipeline
-import algorithm.model.classifier as classifier
+import algorithm.model.classifier as classifier 
 
 
 inputs_path = "./ml_vol/inputs/"
@@ -23,7 +23,6 @@ train_data_path = os.path.join(data_path, "training", "binaryClassificationBaseM
 test_data_path = os.path.join(data_path, "testing", "binaryClassificationBaseMainInput")
 
 model_path = "./ml_vol/model/"
-model_access_path = os.path.join(model_path, "model.save")
 hyper_param_path = os.path.join(model_path, "model_config")
 model_artifacts_path = os.path.join(model_path, "artifacts")
 
@@ -35,15 +34,19 @@ errors_path = os.path.join(output_path, "errors")
 test_results_path = "test_results"
 if not os.path.exists(test_results_path): os.mkdir(test_results_path)
 
+
+# change this to whereever you placed your local testing datasets
+local_datapath = "./../../datasets" 
+
 '''
 this script is useful for doing the algorithm testing locally without needing 
 to build the docker image and run the container.
 make sure you create your virtual environment, install the dependencies
 from requirements.txt file, and then use that virtual env to do your testing. 
-This isnt foolproof. You can still have host os, or python-version related issues, so beware.
+This isnt foolproof. You can still have host os and python version related issues, so beware. 
 '''
 
-model_name = "binary_class_explainable_boosting_interpret"
+model_name= classifier.MODEL_NAME
 
 
 def create_ml_vol():    
@@ -61,7 +64,7 @@ def create_ml_vol():
                 }
             },
             "model": {
-                "model_config": None, 
+                "model_config": None,
                 "artifacts": None,
             }, 
             
@@ -85,11 +88,11 @@ def create_ml_vol():
 
 def copy_example_files(dataset_name):     
     # data schema
-    shutil.copyfile(f"./examples/{dataset_name}_schema.json", os.path.join(data_schema_path, f"{dataset_name}_schema.json"))
+    shutil.copyfile(f"{local_datapath}/{dataset_name}/{dataset_name}_schema.json", os.path.join(data_schema_path, f"{dataset_name}_schema.json"))
     # train data    
-    shutil.copyfile(f"./examples/{dataset_name}_train.csv", os.path.join(train_data_path, f"{dataset_name}_train.csv"))    
+    shutil.copyfile(f"{local_datapath}/{dataset_name}/{dataset_name}_train.csv", os.path.join(train_data_path, f"{dataset_name}_train.csv"))    
     # test data     
-    shutil.copyfile(f"./examples/{dataset_name}_test.csv", os.path.join(test_data_path, f"{dataset_name}_test.csv"))    
+    shutil.copyfile(f"{local_datapath}/{dataset_name}/{dataset_name}_test.csv", os.path.join(test_data_path, f"{dataset_name}_test.csv"))    
     # hyperparameters
     shutil.copyfile("./examples/hyperparameters.json", os.path.join(hyper_param_path, "hyperparameters.json"))
 
@@ -125,55 +128,54 @@ def load_and_test_algo():
     # read data config
     data_schema = utils.get_data_schema(data_schema_path)    
     # instantiate the trained model 
-    predictor = model_server.ModelServer(model_artifacts_path)
+    predictor = model_server.ModelServer(model_artifacts_path, data_schema)
     # make predictions
-    predictions = predictor.predict_proba(test_data, data_schema)
+    predictions = predictor.predict_proba(test_data)
     # save predictions
     predictions.to_csv(os.path.join(testing_outputs_path, "test_predictions.csv"), index=False)
+    # set scoring variables
+    set_scoring_vars(data_schema)
     # score the results
     results = score(test_data, predictions)  
+    # local explanations
+    if hasattr(predictor, "has_local_explanations"): 
+        # will only return explanations for max 5 rows - will select the top 5 if given more rows
+        local_explanations = predictor.explain_local(test_data)
+    else: 
+        local_explanations = None
     print("done with predictions")
-    return results
+    return results, local_explanations
 
 
-def set_scoring_vars(dataset_name):
-    global target_class, other_class, target_field
-    if dataset_name == "cancer": 
-        target_class = "M"; other_class = "B"; target_field = "diagnosis"
-    elif dataset_name == "credit_card": 
-        target_class = "negative"; other_class = "positive"; target_field = "class"
-    elif dataset_name == "mushroom": 
-        target_class = "p"; other_class = "e"; target_field = "class"
-    elif dataset_name == "segment": 
-        target_class = "P"; other_class = "N"; target_field = "binaryClass"
-    elif dataset_name == "spam": 
-        target_class = 1; other_class = 0; target_field = "class"
-    elif dataset_name == "telco_churn": 
-        target_class = "Yes"; other_class = "No"; target_field = "Churn"
-    elif dataset_name == "titanic": 
-        target_class = 1; other_class = 0; target_field = "Survived"
-    else: raise Exception(f"Error: Cannot find dataset = {dataset_name}")
-
+def set_scoring_vars(data_schema):
+    global id_field, target_class, target_field
+    id_field = data_schema["inputDatasets"]["binaryClassificationBaseMainInput"]["idField"]
+    target_class = str(data_schema["inputDatasets"]["binaryClassificationBaseMainInput"]["targetClass"])
+    target_field = data_schema["inputDatasets"]["binaryClassificationBaseMainInput"]["targetField"]
 
 def score(test_data, predictions): 
-    predictions["pred_class"] = predictions.apply(lambda row: 
-        target_class if row[target_class] >= 0.5 else other_class, axis=1)    
+    pred_class_names = [ str(c) for c in predictions.columns[1:]    ]   
+    predictions.columns = [str(c) for c in list(predictions.columns)]    
+    predictions["__pred_class"] = pd.DataFrame(predictions[pred_class_names], columns = pred_class_names).idxmax(axis=1)  
+    predictions = predictions.merge(test_data[[id_field, target_field]], on=[id_field])
     
-    accu = accuracy_score(test_data[target_field], predictions['pred_class'])    
-    f1 = f1_score(test_data[target_field], predictions['pred_class'], pos_label=target_class)    
-    precision = precision_score(test_data[target_field], predictions['pred_class'], pos_label=target_class)    
-    recall = recall_score(test_data[target_field], predictions['pred_class'], pos_label=target_class)    
-    y_true = np.where(test_data[target_field] == target_class, 1., 0.)
-    auc_score = roc_auc_score(y_true, predictions[target_class])
+    Y = predictions[target_field].astype(str)
+    Y_hat = predictions["__pred_class"].astype(str)    
     
-    results = { 
+    accu = accuracy_score(Y , Y_hat)  
+    f1 = f1_score(Y , Y_hat, pos_label=target_class)
+    precision = precision_score(Y , Y_hat, pos_label=target_class)  
+    recall = recall_score(Y , Y_hat, pos_label=target_class)
+    y_true = np.where(Y == target_class, 1., 0.)
+    auc = roc_auc_score(y_true, predictions[target_class])       
+    scores = { 
                "accuracy": np.round(accu,4), 
                "f1_score": np.round(f1, 4), 
                "precision": np.round(precision, 4), 
                "recall": np.round(recall, 4), 
-               "auc_score": np.round(auc_score, 4), 
+               "auc_score": np.round(auc, 4), 
                }
-    return results
+    return scores
 
 
 def save_test_outputs(results, run_hpt, dataset_name):    
@@ -181,10 +183,18 @@ def save_test_outputs(results, run_hpt, dataset_name):
     df = df[["model", "dataset_name", "run_hpt", "num_hpt_trials", 
              "accuracy", "f1_score", "precision", "recall", "auc_score",
              "elapsed_time_in_minutes"]]
-    
+    print(df)
     file_path_and_name = get_file_path_and_name(run_hpt, dataset_name)
     df.to_csv(file_path_and_name, index=False)
-    
+
+
+def save_local_explanations(local_explanations, dataset_name): 
+    if local_explanations is not None: 
+        fname = f"{model_name}_{dataset_name}_local_explanations.json"
+        file_path_and_name = os.path.join(test_results_path, fname)
+        with open(file_path_and_name, 'w') as f:
+            f.writelines(local_explanations)
+
 
 def get_file_path_and_name(run_hpt, dataset_name): 
     if dataset_name is None: 
@@ -202,9 +212,8 @@ def run_train_and_test(dataset_name, run_hpt, num_hpt_trials):
     copy_example_files(dataset_name)   # copy the required files for model training    
     if run_hpt: run_HPT(num_hpt_trials)               # run HPT and save tuned hyperparameters
     train_and_save_algo()        # train the model and save
-    
-    set_scoring_vars(dataset_name=dataset_name)
-    results = load_and_test_algo()        # load the trained model and get predictions on test data
+
+    results, local_explanations = load_and_test_algo()        # load the trained model and get predictions on test data
     
     end = time.time()
     elapsed_time_in_minutes = np.round((end - start)/60.0, 2)
@@ -218,25 +227,28 @@ def run_train_and_test(dataset_name, run_hpt, num_hpt_trials):
                }
     
     print(f"Done with dataset in {elapsed_time_in_minutes} minutes.")
-    return results
+    return results, local_explanations
+
+
 
 
 if __name__ == "__main__": 
     
-    num_hpt_trials = 30
+    num_hpt_trials = 15
     run_hpt_list = [False, True]
     run_hpt_list = [False]
     
-    datasets = ["cancer", "credit_card", "mushroom"]#, "segment", "spam", "telco_churn", "titanic"]
-    datasets = ["cancer"]
+    datasets = ["cancer", "credit_card", "mushroom", "segment", "spam", "telco_churn", "titanic"]
+    # datasets = ["titanic"]
     
     for run_hpt in run_hpt_list:
-        all_results = []
+        all_results = []; local_explanations = []
         for dataset_name in datasets:        
             print("-"*60)
-            print(f"Running dataset {dataset_name}")
-            results = run_train_and_test(dataset_name, run_hpt, num_hpt_trials)
-            save_test_outputs(results, run_hpt, dataset_name)
+            print(f"Running dataset {dataset_name}")            
+            results, local_explanations = run_train_and_test(dataset_name, run_hpt, num_hpt_trials)
+            save_test_outputs(results, run_hpt, dataset_name)  
+            save_local_explanations(local_explanations, dataset_name)          
             all_results.append(results)
             print("-"*60)
         
