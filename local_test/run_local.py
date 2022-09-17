@@ -133,31 +133,34 @@ def load_and_test_algo():
     predictions = predictor.predict_proba(test_data)
     # save predictions
     predictions.to_csv(os.path.join(testing_outputs_path, "test_predictions.csv"), index=False)
-    # set scoring variables
-    set_scoring_vars(data_schema)
-    # score the results
-    results = score(test_data, predictions)  
     # local explanations
     if hasattr(predictor, "has_local_explanations"): 
         # will only return explanations for max 5 rows - will select the top 5 if given more rows
         local_explanations = predictor.explain_local(test_data)
     else: 
         local_explanations = None
+    # score the results
+    test_key = get_test_key()
+    results = score(test_key, predictions, data_schema)  
     print("done with predictions")
     return results, local_explanations
 
 
-def set_scoring_vars(data_schema):
-    global id_field, target_class, target_field
+def get_test_key():
+    test_key = pd.read_csv(f"{local_datapath}/{dataset_name}/{dataset_name}_test_key.csv")
+    return test_key
+
+
+def score(test_key, predictions, data_schema): 
+    
     id_field = data_schema["inputDatasets"]["binaryClassificationBaseMainInput"]["idField"]
     target_class = str(data_schema["inputDatasets"]["binaryClassificationBaseMainInput"]["targetClass"])
-    target_field = data_schema["inputDatasets"]["binaryClassificationBaseMainInput"]["targetField"]
-
-def score(test_data, predictions): 
+    target_field = data_schema["inputDatasets"]["binaryClassificationBaseMainInput"]["targetField"]    
+    
     pred_class_names = [ str(c) for c in predictions.columns[1:]    ]   
     predictions.columns = [str(c) for c in list(predictions.columns)]    
     predictions["__pred_class"] = pd.DataFrame(predictions[pred_class_names], columns = pred_class_names).idxmax(axis=1)  
-    predictions = predictions.merge(test_data[[id_field, target_field]], on=[id_field])
+    predictions = predictions.merge(test_key[[id_field, target_field]], on=[id_field])
     
     Y = predictions[target_field].astype(str)
     Y_hat = predictions["__pred_class"].astype(str)    
@@ -174,14 +177,15 @@ def score(test_data, predictions):
                "precision": np.round(precision, 4), 
                "recall": np.round(recall, 4), 
                "auc_score": np.round(auc, 4), 
-               }
+               "perc_pred_missing": np.round( 100 * (1 - predictions.shape[0] / test_key.shape[0]), 2)
+        }
     return scores
 
 
 def save_test_outputs(results, run_hpt, dataset_name):    
     df = pd.DataFrame(results) if dataset_name is None else pd.DataFrame([results])        
     df = df[["model", "dataset_name", "run_hpt", "num_hpt_trials", 
-             "accuracy", "f1_score", "precision", "recall", "auc_score",
+             "accuracy", "f1_score", "precision", "recall", "auc_score", "perc_pred_missing",
              "elapsed_time_in_minutes"]]
     print(df)
     file_path_and_name = get_file_path_and_name(run_hpt, dataset_name)
