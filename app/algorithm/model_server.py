@@ -65,8 +65,6 @@ class ModelServer:
         class_names = pipeline.get_class_names(self.preprocessor, model_cfg)
         # return the prediction df with the id and class probability fields
         preds_df = data[[self.id_field_name]].copy()
-        # preds_df[class_names[0]] = 1 - preds
-        # preds_df[class_names[-1]] = preds
         preds_df[class_names] = preds
         return preds_df
 
@@ -110,30 +108,39 @@ class ModelServer:
         local_explanations = model.explain_local(pred_X)
 
         class_names = pipeline.get_class_names(self.preprocessor, model_cfg)
-        all_explanations = []
+        explanations = []
         for i in range(pred_X.shape[0]):
-            local_expl_data = local_explanations.data(i)
-            sample_expl_dict = {}
-            sample_expl_dict[self.id_field_name] = ids[i]
-            sample_expl_dict["predicted_class"] = class_names[
-                int(local_expl_data["perf"]["predicted"])
-            ]
-            sample_expl_dict["predicted_class_prob"] = np.round(
-                local_expl_data["perf"]["predicted_score"], 4
+            sample_exp = local_explanations.data(i)
+            pred_class = class_names[sample_exp["perf"]["predicted"]]
+            class_prob = np.round(sample_exp["perf"]["predicted_score"], 5)
+            other_class = (
+                class_names[0] if class_names[1] == pred_class else class_names[1]
             )
-            sample_expl_dict["Intercept"] = local_expl_data["extra"]["scores"][0]
-            feature_impacts = {}
-            for f_name, f_impact in zip(
-                local_expl_data["names"], local_expl_data["scores"]
-            ):
-                feature_impacts[f_name] = round(f_impact, 4)
-
-            sample_expl_dict["feature_impacts"] = feature_impacts
-            all_explanations.append(sample_expl_dict)
-            # pprint.pprint(sample_expl_dict)
-        # ------------------------------------------------------
-        all_explanations = json.dumps(all_explanations, cls=utils.NpEncoder, indent=2)
-        return all_explanations
+            probabilities = {
+                other_class: np.round(1 - class_prob, 5),
+                pred_class: np.round(class_prob, 5),
+            }
+            sample_expl_dict = {}
+            # intercept
+            sample_expl_dict["baseline"] = np.round(sample_exp["extra"]["scores"][0], 5)
+            sample_expl_dict["feature_scores"] = {
+                f: np.round(s, 5)
+                for f, s in zip(sample_exp["names"], sample_exp["scores"])
+            }
+            sample_expl_dict[
+                "comment_"
+            ] = f"Explanations are w.r.t. predicted class: '{pred_class}'"
+            explanations.append(
+                {
+                    self.id_field_name: ids[i],
+                    "label": pred_class,
+                    "probabilities": probabilities,
+                    "explanations": sample_expl_dict,
+                }
+            )
+        explanations = {"predictions": explanations}
+        explanations = json.dumps(explanations, cls=utils.NpEncoder, indent=2)
+        return explanations
 
     def _get_predictions(self, data):
         preprocessor = self._get_preprocessor()

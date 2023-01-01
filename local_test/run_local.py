@@ -313,7 +313,7 @@ if __name__ == "__main__":
         "telco_churn",
         "titanic",
     ]
-    datasets = ["cancer"]
+    datasets = ["titanic"]
 
     for run_hpt in run_hpt_list:
         all_results = []
